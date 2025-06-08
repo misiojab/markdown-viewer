@@ -1,0 +1,9 @@
+{
+  "name": "Markdown Viewer",
+  "description": "Displays markdown file contents in panel dropdown",
+  "uuid": "markdown-viewer@misiojab",
+  "shell-version": ["48.2"],
+  "version": 1,
+  "url": "",
+  "settings-schema": "org.gnome.shell.extensions.markdown-viewer"
+}

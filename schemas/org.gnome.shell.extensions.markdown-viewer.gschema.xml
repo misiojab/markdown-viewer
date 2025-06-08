@@ -1,0 +1,29 @@
+<schemalist>
+  <schema id="org.gnome.shell.extensions.markdown-viewer" path="/org/gnome/shell/extensions/markdown-viewer/">
+    
+    <key name="file-path" type="s">
+      <default>''</default>
+      <summary>Path to the Markdown file</summary>
+      <description>
+        The absolute path of the Markdown file whose contents will be displayed in the GNOME top bar.
+      </description>
+    </key>
+
+    <key name="start-line" type="i">
+      <default>1</default>
+      <summary>Start line number</summary>
+      <description>
+        The first line to display (1-based). If the value is less than 1, it will default to 1.
+      </description>
+    </key>
+
+    <key name="end-line" type="i">
+      <default>0</default>
+      <summary>End line number</summary>
+      <description>
+        The last line to display. If set to 0, all lines after the start line will be shown.
+      </description>
+    </key>
+
+  </schema>
+</schemalist>
