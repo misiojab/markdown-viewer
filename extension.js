@@ -11,22 +11,22 @@ const SETTINGS_SCHEMA = 'org.gnome.shell.extensions.markdown-viewer';
 
 const MarkdownViewerIndicator = GObject.registerClass(
 class MarkdownViewerIndicator extends PanelMenu.Button {
-    _init(settings) {
+    _init(settings, extension) {
         super._init(0.0, 'Markdown Viewer');
         this._settings = settings;
+        this._extension = extension;
 
-        // Panel icon
+        const iconFile = Gio.File.new_for_path(
+            `${this._extension.dir.get_path()}/icons/icon.svg`
+        );
+
         this.icon = new St.Icon({
-            icon_name: 'document-view-symbolic',
-            style_class: 'system-status-icon'
+            gicon: new Gio.FileIcon({ file: iconFile }),
+            style_class: 'system-status-icon',
         });
         this.add_child(this.icon);
 
-        // Setup menu
-        this.menu.box.add_style_class_name('markdown-menu');
         this._updateMenu();
-
-        // Watch for settings changes
         this._settingsChangedId = this._settings.connect('changed', () => this._updateMenu());
     }
 
@@ -55,18 +55,46 @@ class MarkdownViewerIndicator extends PanelMenu.Button {
                     if (success) {
                         const text = new TextDecoder().decode(contents);
                         const lines = text.split('\n');
+                        const updated = [];
 
-                        const start = Math.max(0, this._settings.get_int('start-line') - 1);
-                        const end = this._settings.get_int('end-line') || lines.length;
-                        const visibleLines = lines.slice(start, end);
+                        let currentSection = null;
+                        let sectionItems = [];
 
-                        if (visibleLines.length === 0) {
-                            this._addMenuItem('No content in selected range');
-                        } else {
-                            visibleLines.forEach(line => {
-                                if (line.trim()) this._addMenuItem(line);
-                            });
-                        }
+                        const flushSection = () => {
+                            if (currentSection && sectionItems.length) {
+                                this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(currentSection));
+                                sectionItems.forEach(({ line, index }) => {
+                                    const isChecked = line.match(/^- \[x\]/i);
+                                    const icon = new St.Icon({
+                                        icon_name: isChecked ? 'checkbox-checked-symbolic' : 'checkbox-symbolic',
+                                        style_class: 'popup-menu-icon'
+                                    });
+
+                                    const item = new PopupMenu.PopupMenuItem(line.replace(/^\s*- \[[x ]\] /i, ''));
+                                    item.insert_child_at_index(icon, 0);
+
+                                    item.connect('activate', () => {
+                                        lines[index] = isChecked
+                                            ? line.replace('- [x]', '- [ ]')
+                                            : line.replace('- [ ]', '- [x]');
+                                        this._writeFile(file, lines);
+                                    });
+
+                                    this.menu.addMenuItem(item);
+                                });
+                            }
+                        };
+
+                        lines.forEach((line, idx) => {
+                            if (line.startsWith('## ')) {
+                                flushSection();
+                                currentSection = line.replace(/^##\s*/, '').trim();
+                                sectionItems = [];
+                            } else if (line.match(/^\s*- \[[ xX]\] /)) {
+                                sectionItems.push({ line, index: idx });
+                            }
+                        });
+                        flushSection();
                     }
                 } catch (e) {
                     logError(e, 'Failed to load file');
@@ -79,16 +107,31 @@ class MarkdownViewerIndicator extends PanelMenu.Button {
         }
     }
 
+    _writeFile(file, lines) {
+        try {
+            const output = lines.join('\n');
+            file.replace_contents_bytes_async(
+                new GLib.Bytes(new TextEncoder().encode(output)),
+                null,
+                false,
+                Gio.FileCreateFlags.REPLACE_DESTINATION,
+                null,
+                () => this._updateMenu()
+            );
+        } catch (e) {
+            logError(e, 'Failed to write to file');
+        }
+    }
+
     _addMenuItem(text) {
-        const item = new PopupMenu.PopupMenuItem(text);
-        this.menu.addMenuItem(item);
+        this.menu.addMenuItem(new PopupMenu.PopupMenuItem(text));
     }
 });
 
 export default class MarkdownViewerExtension extends Extension {
     enable() {
         this._settings = this.getSettings(SETTINGS_SCHEMA);
-        this._indicator = new MarkdownViewerIndicator(this._settings);
+        this._indicator = new MarkdownViewerIndicator(this._settings, this);
         Main.panel.addToStatusArea(this.uuid, this._indicator);
     }
 
