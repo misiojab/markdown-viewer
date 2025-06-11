@@ -19,7 +19,7 @@ Ideal for simple TODO workflows right from your top bar!
 
 Clone the extension directly into your local GNOME extensions folder:
 ```bash
-git clone https://github.com/yourusername/markdown-task-viewer.git ~/.local/share/gnome-shell/extensions/markdown-viewer@yourdomain
+git clone https://github.com/misiojab/markdown-viewer ~/.local/share/gnome-shell/extensions/markdown-viewer@misiojab
 ```
 Ensure you are using GNOME version 48 or later.
 
