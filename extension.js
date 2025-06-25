@@ -1,3 +1,4 @@
+// extension.js
 import GObject from 'gi://GObject';
 import Gio from 'gi://Gio';
 import St from 'gi://St';
@@ -26,16 +27,54 @@ class MarkdownViewerIndicator extends PanelMenu.Button {
         });
         this.add_child(this.icon);
 
+        this._lastChecksum = null;
         this._updateMenu();
+
+        this._monitor = null;
+        this._watchFile();
         this._settingsChangedId = this._settings.connect('changed', () => this._updateMenu());
     }
 
     destroy() {
+        if (this._monitor) {
+            this._monitor.cancel();
+            this._monitor = null;
+        }
         if (this._settingsChangedId) {
             this._settings.disconnect(this._settingsChangedId);
             this._settingsChangedId = null;
         }
         super.destroy();
+    }
+
+    _watchFile() {
+        const filePath = this._settings.get_string('file-path');
+        if (!filePath) return;
+
+        const file = Gio.File.new_for_path(filePath);
+        try {
+            this._monitor = file.monitor(Gio.FileMonitorFlags.NONE, null);
+            this._monitor.connect('changed', () => this._onFileChanged(file));
+        } catch (e) {
+            logError(e, 'Failed to monitor file');
+        }
+    }
+
+    _onFileChanged(file) {
+        file.load_contents_async(null, (f, res) => {
+            try {
+                const [success, contents] = f.load_contents_finish(res);
+                if (success) {
+                    const checksum = GLib.compute_checksum_for_data(GLib.ChecksumType.SHA256, contents);
+                    if (checksum !== this._lastChecksum) {
+                        this._lastChecksum = checksum;
+                        this._updateMenu();
+                    }
+                }
+            } catch (e) {
+                logError(e, 'Error checking file changes');
+            }
+        });
     }
 
     _updateMenu() {
@@ -55,46 +94,54 @@ class MarkdownViewerIndicator extends PanelMenu.Button {
                     if (success) {
                         const text = new TextDecoder().decode(contents);
                         const lines = text.split('\n');
-                        const updated = [];
+                        const kanbanEnabled = this._settings.get_boolean('kanban-enabled');
 
-                        let currentSection = null;
-                        let sectionItems = [];
+                        if (kanbanEnabled) {
+                            let currentSection = null;
+                            let sectionItems = [];
 
-                        const flushSection = () => {
-                            if (currentSection && sectionItems.length) {
-                                this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(currentSection));
-                                sectionItems.forEach(({ line, index }) => {
-                                    const isChecked = line.match(/^- \[x\]/i);
-                                    const icon = new St.Icon({
-                                        icon_name: isChecked ? 'checkbox-checked-symbolic' : 'checkbox-symbolic',
-                                        style_class: 'popup-menu-icon'
+                            const flushSection = () => {
+                                if (currentSection && sectionItems.length) {
+                                    this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(currentSection));
+                                    sectionItems.forEach(({ line, index }) => {
+                                        const isChecked = line.match(/^- \[x\]/i);
+                                        const icon = new St.Icon({
+                                            icon_name: isChecked ? 'checkbox-checked-symbolic' : 'checkbox-symbolic',
+                                            style_class: 'popup-menu-icon'
+                                        });
+
+                                        const item = new PopupMenu.PopupMenuItem(line.replace(/^\s*- \[[x ]\] /i, ''));
+                                        item.insert_child_at_index(icon, 0);
+
+                                        item.connect('activate', () => {
+                                            lines[index] = isChecked
+                                                ? line.replace('- [x]', '- [ ]')
+                                                : line.replace('- [ ]', '- [x]');
+                                            this._writeFile(file, lines);
+                                        });
+
+                                        this.menu.addMenuItem(item);
                                     });
+                                }
+                            };
 
-                                    const item = new PopupMenu.PopupMenuItem(line.replace(/^\s*- \[[x ]\] /i, ''));
-                                    item.insert_child_at_index(icon, 0);
-
-                                    item.connect('activate', () => {
-                                        lines[index] = isChecked
-                                            ? line.replace('- [x]', '- [ ]')
-                                            : line.replace('- [ ]', '- [x]');
-                                        this._writeFile(file, lines);
-                                    });
-
-                                    this.menu.addMenuItem(item);
-                                });
-                            }
-                        };
-
-                        lines.forEach((line, idx) => {
-                            if (line.startsWith('## ')) {
-                                flushSection();
-                                currentSection = line.replace(/^##\s*/, '').trim();
-                                sectionItems = [];
-                            } else if (line.match(/^\s*- \[[ xX]\] /)) {
-                                sectionItems.push({ line, index: idx });
-                            }
-                        });
-                        flushSection();
+                            lines.forEach((line, idx) => {
+                                if (line.startsWith('## ')) {
+                                    flushSection();
+                                    currentSection = line.replace(/^##\s*/, '').trim();
+                                    sectionItems = [];
+                                } else if (line.match(/^\s*- \[[ xX]\] /)) {
+                                    sectionItems.push({ line, index: idx });
+                                }
+                            });
+                            flushSection();
+                        } else {
+                            lines.forEach(line => {
+                                const item = new PopupMenu.PopupMenuItem(line.trim());
+                                item.reactive = false;
+                                this.menu.addMenuItem(item);
+                            });
+                        }
                     }
                 } catch (e) {
                     logError(e, 'Failed to load file');
