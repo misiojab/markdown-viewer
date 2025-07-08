@@ -24,6 +24,12 @@
         The last line to display. If set to 0, all lines after the start line will be shown.
       </description>
     </key>
+    
+    <key name="kanban-enabled" type="b">
+      <default>false</default>
+      <summary>Enable Kanban View</summary>
+      <description>Display markdown tasks in Kanban layout using section headers as columns.</description>
+    </key>
 
   </schema>
 </schemalist>
